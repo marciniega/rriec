@@ -1,0 +1,11 @@
+# The only requirement is to rriec to work is
+# to provide the provide the path to src folder
+# in rriec.sh file
+# This means that the 4th line in rriec.sh
+# should be modified from:
+# 
+# pth2scr=XXXXX/rriec/src 
+#
+# to something like:
+# pth2scr=/home/marciniega/software/rriec/src
+# 
