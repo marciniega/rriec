@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+set -e
+
+pth2scr=/XXXX/rriec/src
+. "$pth2scr"/job_pool.sh
+. "$pth2scr"/rriec_awk.sh
+
+if [[ $# -eq 0 ]]; then
+        echo ""
+        echo "$script_name: This script needs arguments."
+        echo ""
+        show_help
+        echo ""
+        exit 1
+fi
+
+while [[ $# -gt 0 ]]; do
+	case $1 in
+		-f | --contrb_file ) shift
+				mm_decomp=$1
+					;;
+		-s | --start ) shift
+				begin=$1
+					;;
+		-b | --bootstrap ) shift
+				nboots=$1
+					;;
+		-c | --cores ) shift
+				nprocess=$1
+					;;
+		-h | --help ) show_help
+				exit
+					;;
+		*)
+		echo "$script_name: illegal option $1"
+		example
+		exit 1
+					;;
+	esac
+	shift
+done
+
+if [ -z "$begin" ];    then begin=1 ; fi
+if [ -z "$nboots" ];   then nboots=30 ; fi
+if [ -z "$nprocess" ]; then nprocess=`nproc | awk '{print $1/2}'` ; fi
+
+checkint "$begin"  "the starting frame"
+checkint "$nboots" "the number of bootstrap runs"
+checkint "$nprocess" "the number of cores to use runs"
+
+
+cur=`pwd`
+tmp_name=`echo "$mm_decomp" | awk -F'.' '{print $1}'`
+nframes=`awk '(!(/#/||/&/||/@/)){c++}END{print c}' "$mm_decomp"`
+totfrms=$((nframes-begin+1))
+nres=`awk 'END{print NF-1}' "$mm_decomp"`
+res_names=(`awk '(NR==1){ for (x=3;x<=NF;x++) print $x}' "$mm_decomp"`)
+echo " Residue Relative Interacction Entropy "
+echo "The number of frames to be considered is:         $totfrms "
+echo "The number of residues to be considered is:       $nres "
+echo "The number of bootstrap runs to be performed is:  $nboots "
+echo "The number of cores to be used is:                $nprocess "
+echo " "
+touch inter_entropy_bootstrap_resi.txt 
+for i in `seq 1 "$nboots"`;do
+    for j in `seq "$begin" "$nframes"`;do 
+        echo "" | awk -v r=$RANDOM -v t="$totfrms" -v b=$begin '{print (r%t)+b}' ;done > keys
+    get_bootstrap_from_keys "$mm_decomp" keys > bootst_decomp.txt 
+    compute_partial_res_sums bootst_decomp.txt > resi_contrib_by_frame.xvg
+    entropy_inter=`compute_entropy_res resi_contrib_by_frame.xvg`
+    echo "#total: $entropy_inter" >> inter_entropy_bootstrap_resi.txt 
+    mkdir temporal_riecc_"$tmp_name"
+    cd temporal_riecc_"$tmp_name"
+    job_pool_init "$nprocess" 0
+    for resi in `seq 1 "$nres"`;do
+       rndx=$((resi-1))
+       job_pool_run compute_entropy_res_pool ../resi_contrib_by_frame.xvg "$resi" "$entropy_inter" "${res_names["$rndx"]}"
+    done
+    job_pool_wait
+    job_pool_shutdown
+    for resi in `seq 1 "$nres"`;do
+       cat cerp_"$resi".txt >> ../inter_entropy_bootstrap_resi.txt 
+       rm cerp_"$resi".txt
+    done
+    cd "$cur"
+    rm -r bootst_energy.txt bootst_decomp.txt keys resi_contrib_by_frame.xvg temporal_riecc_"$tmp_name"
+done
+echo "#bootstrap_run  inter_entropy " > inter_entropy_bootstrap.txt
+grep '#total' inter_entropy_bootstrap_resi.txt >> inter_entropy_value.txt 
+get_stats_res inter_entropy_bootstrap_resi.txt > inter_entropy_res_value.txt 
+rm inter_entropy_bootstrap.txt inter_entropy_bootstrap_resi.txt 
+exit "${job_pool_nerrors}"
