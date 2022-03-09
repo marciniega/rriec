@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -e
 
+script_name="rriec"
 pth2scr=/XXXX/rriec/src
 . "$pth2scr"/job_pool.sh
 . "$pth2scr"/rriec_awk.sh
